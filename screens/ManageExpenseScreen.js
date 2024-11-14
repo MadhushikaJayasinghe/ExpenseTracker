@@ -1,15 +1,22 @@
-import { useContext, useLayoutEffect } from "react";
+import { useContext, useLayoutEffect, useState } from "react";
 import { Text, View, StyleSheet } from "react-native";
 import IconButton from "../components/UI/IconButton";
 import { GlobalStyles } from "../constants/styles";
 import Button from "../components/UI/Button";
 import { ExpensesContext } from "../store/expenses-context";
+import ExpenseForm from "../components/ManageExpense/ExpenseForm";
+import { deleteExpense, storeExpense, updateExpense } from "../util/http";
+import LoadingOverlay from "../components/UI/LoadingOverlay";
+import ErrorOverlay from "../components/UI/ErrorOverlay";
 
 function ManageExpense({ route, navigation }) {
-
+    const [isFetching, setIsFetching] = useState(false);
     const expensesContext = useContext(ExpensesContext);
     const editedExpenseId = route.params?.expenseId;
     const isEditing = !!editedExpenseId;
+    const [error, setError] = useState();
+
+    const selectedExpense = expensesContext.expenses.find((expense) => expense.id === editedExpenseId)
 
     useLayoutEffect(() => {
         navigation.setOptions({
@@ -17,38 +24,55 @@ function ManageExpense({ route, navigation }) {
         });
     }, [navigation, isEditing])
 
-    function deleteExpenseHandler() {
-        expensesContext.deleteExpense(editedExpenseId)
-        navigation.goBack();
+    async function deleteExpenseHandler() {
+        setIsFetching(true);
+        try {
+            await deleteExpense(editedExpenseId)
+            expensesContext.deleteExpense(editedExpenseId)
+            navigation.goBack();
+        } catch (error) {
+            setError('error!');
+            setIsFetching(false);
+        }
+
     }
 
     function cancelHandler() {
         navigation.goBack();
     }
-    function confirmHandler() {
-        if (isEditing) {
-            expensesContext.updateExpense(editedExpenseId,
-                {
-                    description: "update test",
-                    amount: 19.99,
-                    date: new Date('2024-11-11')
-                });
-        } else {
-            expensesContext.addExpense({
-                description: "add test",
-                amount: 19.99,
-                date: new Date('2024-11-11')
-            });
+    async function confirmHandler(expenseData) {
+        setIsFetching(true);
+        try {
+            if (isEditing) {
+                expensesContext.updateExpense(editedExpenseId, expenseData);
+                await updateExpense(editedExpenseId, expenseData)
+
+            } else {
+                const id = await storeExpense(expenseData);
+                expensesContext.addExpense({ ...expenseData, id: id });
+            }
+            navigation.goBack();
+        } catch (error) {
+            setError("error!");
+            setIsFetching(false);
         }
-        navigation.goBack();
+
+    }
+
+    if (error && !isEditing) {
+        return <ErrorOverlay message={error} />
+    }
+    if (isFetching) {
+        return <LoadingOverlay />
     }
 
     return (
         <View style={styles.container}>
-            <View style={styles.buttons}>
-                <Button style={styles.buttonStyle} mode='flat' onPress={cancelHandler}>Cancel</Button>
-                <Button style={styles.buttonStyle} onPress={confirmHandler}>{isEditing ? 'Update' : 'Add'}</Button>
-            </View>
+            <ExpenseForm onCancel={cancelHandler}
+                submitLabel={isEditing ? 'Update' : 'Add'}
+                onSubmit={confirmHandler}
+                defaultValues={selectedExpense} />
+
             {isEditing && (
                 <View style={styles.deleteContainer}>
                     <IconButton
@@ -76,13 +100,5 @@ const styles = StyleSheet.create({
         borderTopColor: GlobalStyles.colors.primary200,
         alignItems: 'center'
     },
-    buttons: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center'
-    },
-    buttonStyle: {
-        minWidth: 120,
-        marginHorizontal: 8
-    }
+
 })
